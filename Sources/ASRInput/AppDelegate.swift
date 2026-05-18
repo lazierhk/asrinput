@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
             self?.overlay.updateText(text)
         }
         transcriber.onLevel = { [weak self] level in
-            self?.overlay.waveformView.inputLevel = level
+            self?.overlay.updateLevel(level)
         }
     }
 

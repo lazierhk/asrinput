@@ -3,15 +3,15 @@ import OverlayHUDCore
 
 final class OverlayPanel: NSPanel {
     private let visualEffect = NSVisualEffectView()
-    private(set) var waveformView = WaveformView()
+    private let glassStrokeView = GlassStrokeView()
+    private let waveformView = WaveformView()
     private let textLabel = NSTextField(labelWithString: "")
 
     private let metrics = OverlayHUDMetrics()
-    private var panelHeight: CGFloat { CGFloat(metrics.panelHeight) }
+    private let panelWidth: CGFloat = 316
+    private let hudHeight: CGFloat = 70
+    private var panelHeight: CGFloat { hudHeight }
     private var bottomMargin: CGFloat { CGFloat(metrics.bottomMargin) }
-    private var hPadding: CGFloat { CGFloat(metrics.horizontalPadding) }
-    private var waveformWidth: CGFloat { CGFloat(metrics.waveformWidth) }
-    private var waveGap: CGFloat { CGFloat(metrics.waveGap) }
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -46,30 +46,40 @@ final class OverlayPanel: NSPanel {
         visualEffect.wantsLayer = true
         visualEffect.layer?.cornerRadius = panelHeight / 2
         visualEffect.layer?.masksToBounds = true
+        visualEffect.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.09).cgColor
         contentView = visualEffect
 
+        glassStrokeView.translatesAutoresizingMaskIntoConstraints = false
         waveformView.translatesAutoresizingMaskIntoConstraints = false
         textLabel.translatesAutoresizingMaskIntoConstraints = false
 
         textLabel.textColor = NSColor.white
-        textLabel.font = NSFont.systemFont(ofSize: 15, weight: .medium)
+        textLabel.font = NSFont.systemFont(ofSize: 1, weight: .regular)
         textLabel.lineBreakMode = .byTruncatingTail
         textLabel.maximumNumberOfLines = 1
         textLabel.cell?.usesSingleLineMode = true
         textLabel.alignment = .left
+        textLabel.isHidden = true
 
         visualEffect.addSubview(waveformView)
         visualEffect.addSubview(textLabel)
+        visualEffect.addSubview(glassStrokeView)
 
         NSLayoutConstraint.activate([
-            waveformView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: hPadding),
-            waveformView.centerYAnchor.constraint(equalTo: visualEffect.centerYAnchor),
-            waveformView.widthAnchor.constraint(equalToConstant: waveformWidth),
-            waveformView.heightAnchor.constraint(equalToConstant: 40),
+            glassStrokeView.topAnchor.constraint(equalTo: visualEffect.topAnchor),
+            glassStrokeView.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor),
+            glassStrokeView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor),
+            glassStrokeView.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor),
 
-            textLabel.leadingAnchor.constraint(equalTo: waveformView.trailingAnchor, constant: waveGap),
-            textLabel.centerYAnchor.constraint(equalTo: visualEffect.centerYAnchor),
-            textLabel.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -hPadding),
+            waveformView.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor, constant: 24),
+            waveformView.trailingAnchor.constraint(equalTo: visualEffect.trailingAnchor, constant: -24),
+            waveformView.centerYAnchor.constraint(equalTo: visualEffect.centerYAnchor),
+            waveformView.heightAnchor.constraint(equalToConstant: 50),
+
+            textLabel.widthAnchor.constraint(equalToConstant: 1),
+            textLabel.heightAnchor.constraint(equalToConstant: 1),
+            textLabel.leadingAnchor.constraint(equalTo: visualEffect.leadingAnchor),
+            textLabel.bottomAnchor.constraint(equalTo: visualEffect.bottomAnchor),
         ])
     }
 
@@ -77,8 +87,6 @@ final class OverlayPanel: NSPanel {
         let initialText = "正在聆听…"
         textLabel.stringValue = initialText
         guard let screen = screenForPlacement() else { return }
-        let textWidth = clampedTextWidth(initialText)
-        let panelWidth = self.panelWidth(textWidth: textWidth)
         let x = centeredX(panelWidth: panelWidth, screen: screen)
         let targetY = screen.visibleFrame.origin.y + bottomMargin
         let startY = targetY - 20
@@ -86,7 +94,9 @@ final class OverlayPanel: NSPanel {
         setFrame(NSRect(x: x, y: startY, width: panelWidth, height: panelHeight), display: false)
         alphaValue = 0
         orderFrontRegardless()
+        waveformView.mode = .listening
         waveformView.startAnimating()
+        setAccessibilityLabel(initialText)
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.35
@@ -104,28 +114,23 @@ final class OverlayPanel: NSPanel {
             guard let self, self.isVisible else { return }
             let displayText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             self.textLabel.stringValue = displayText.isEmpty ? "正在聆听…" : displayText
-            let newWidth = self.clampedTextWidth(self.textLabel.stringValue)
-            let newPanelWidth = self.panelWidth(textWidth: newWidth)
-            guard let screen = self.screenForPlacement() else { return }
-            let x = self.centeredX(panelWidth: newPanelWidth, screen: screen)
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.28
-                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.89, 0.32, 1.18)
-                self.animator().setFrame(
-                    NSRect(
-                        x: x,
-                        y: screen.visibleFrame.origin.y + self.bottomMargin,
-                        width: newPanelWidth,
-                        height: self.panelHeight
-                    ),
-                    display: true
-                )
-            }
+            self.setAccessibilityLabel(self.textLabel.stringValue)
+        }
+    }
+
+    func updateLevel(_ level: Float) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible else { return }
+            self.waveformView.inputLevel = level
         }
     }
 
     func showRefining() {
-        updateText("优化中…")
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible else { return }
+            self.waveformView.mode = .refining
+            self.updateText("优化中…")
+        }
     }
 
     func dismiss() {
@@ -141,31 +146,8 @@ final class OverlayPanel: NSPanel {
             self.orderOut(nil)
             self.textLabel.stringValue = ""
             self.alphaValue = 0
+            self.waveformView.mode = .listening
         })
-    }
-
-    private func clampedTextWidth(_ text: String) -> CGFloat {
-        let fontSize = textLabel.font?.pointSize ?? NSFont.systemFontSize
-        let sampledText = text.prefix(120)
-        let weightedUnits = sampledText.reduce(0.0) { total, character in
-            total + (character.isASCII ? 0.58 : 1.0)
-        }
-        let natural = weightedUnits * Double(fontSize) + 8
-        return CGFloat(
-            OverlayHUDLayout.textWidth(
-                naturalWidth: Double(natural),
-                metrics: metrics
-            )
-        )
-    }
-
-    private func panelWidth(textWidth: CGFloat) -> CGFloat {
-        CGFloat(
-            OverlayHUDLayout.panelWidth(
-                textWidth: Double(textWidth),
-                metrics: metrics
-            )
-        )
     }
 
     private func screenForPlacement() -> NSScreen? {
@@ -174,5 +156,34 @@ final class OverlayPanel: NSPanel {
 
     private func centeredX(panelWidth: CGFloat, screen: NSScreen) -> CGFloat {
         screen.visibleFrame.origin.x + (screen.visibleFrame.width - panelWidth) / 2
+    }
+}
+
+private final class GlassStrokeView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 0.75, dy: 0.75)
+        let radius = rect.height / 2
+        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+
+        NSColor(calibratedWhite: 1.0, alpha: 0.15).setFill()
+        path.fill()
+
+        NSColor(calibratedWhite: 1.0, alpha: 0.34).setStroke()
+        path.lineWidth = 1.2
+        path.stroke()
+
+        let highlightRect = rect.insetBy(dx: 8, dy: 4)
+        let highlightPath = NSBezierPath(roundedRect: highlightRect, xRadius: highlightRect.height / 2, yRadius: highlightRect.height / 2)
+        NSColor(calibratedWhite: 1.0, alpha: 0.10).setStroke()
+        highlightPath.lineWidth = 1
+        highlightPath.stroke()
     }
 }

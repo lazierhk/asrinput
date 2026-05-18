@@ -17,6 +17,10 @@ let package = Package(
             name: "ASRInput",
             dependencies: ["LLMRuleCore", "OverlayHUDCore"],
             path: "Sources/ASRInput",
+            exclude: [
+                "Resources/AppIconSource.png",
+                "Resources/Info.plist"
+            ],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

@@ -6,6 +6,7 @@ CONTENTS  = $(BUNDLE)/Contents
 RESOURCES = $(CONTENTS)/Resources
 ICON_DIR  = $(BUILD_DIR)/AppIcon.iconset
 ICNS      = $(BUILD_DIR)/AppIcon.icns
+ICON_SRC  = Sources/ASRInput/Resources/AppIconSource.png
 DMG       = .build/$(APP_NAME).dmg
 DMG_DIR   = .build/dmg
 
@@ -18,7 +19,7 @@ build:
 
 icon: $(ICNS)
 
-$(ICNS): scripts/make_icon.swift
+$(ICNS): scripts/make_icon.swift $(ICON_SRC)
 	@echo "=== Generating app icon ==="
 	@mkdir -p $(BUILD_DIR)
 	swift scripts/make_icon.swift $(BUILD_DIR)/icon_1024.png
