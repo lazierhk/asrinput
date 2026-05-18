@@ -1,4 +1,5 @@
 import Foundation
+import LLMRuleCore
 
 enum STTBackend: String, Codable {
     case apple
@@ -84,6 +85,16 @@ final class Preferences {
         set { defaults.set(newValue, forKey: "llmModel") }
     }
 
+    var llmCorrectionMode: LLMCorrectionMode {
+        get {
+            guard let raw = defaults.string(forKey: "llmCorrectionMode"),
+                  let mode = LLMCorrectionMode(rawValue: raw)
+            else { return .strict }
+            return mode
+        }
+        set { defaults.set(newValue.rawValue, forKey: "llmCorrectionMode") }
+    }
+
     var llmPunctuationEnabled: Bool {
         get { bool(forKey: "llmPunctuationEnabled", default: true) }
         set { defaults.set(newValue, forKey: "llmPunctuationEnabled") }
@@ -102,5 +113,10 @@ final class Preferences {
     var llmCustomRules: String {
         get { defaults.string(forKey: "llmCustomRules") ?? "" }
         set { defaults.set(newValue, forKey: "llmCustomRules") }
+    }
+
+    var llmGlossary: String {
+        get { defaults.string(forKey: "llmGlossary") ?? "" }
+        set { defaults.set(newValue, forKey: "llmGlossary") }
     }
 }

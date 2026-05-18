@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
 
             DispatchQueue.main.async { self.overlay.updateText(text) }
 
-            if Preferences.shared.llmEnabled && !Preferences.shared.llmAPIKey.isEmpty {
+            if Preferences.shared.llmEnabled && !Preferences.shared.llmBaseURL.isEmpty {
                 DispatchQueue.main.async { self.overlay.showRefining() }
                 self.llm.refine(text) { result in
                     let final = result ?? text
@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
             return
         }
 
-        if Preferences.shared.llmEnabled && !Preferences.shared.llmAPIKey.isEmpty {
+        if Preferences.shared.llmEnabled && !Preferences.shared.llmBaseURL.isEmpty {
             overlay.showRefining()
             llm.refine(text) { result in
                 let final = result ?? text

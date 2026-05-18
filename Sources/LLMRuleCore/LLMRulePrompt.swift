@@ -5,17 +5,26 @@ public struct LLMRuleSettings {
     public var sentenceBreakEnabled: Bool
     public var fillerWordsEnabled: Bool
     public var customRules: String
+    public var mode: LLMCorrectionMode
+    public var language: String
+    public var glossary: String
 
     public init(
         punctuationEnabled: Bool,
         sentenceBreakEnabled: Bool,
         fillerWordsEnabled: Bool,
-        customRules: String
+        customRules: String,
+        mode: LLMCorrectionMode = .strict,
+        language: String = "zh-CN",
+        glossary: String = ""
     ) {
         self.punctuationEnabled = punctuationEnabled
         self.sentenceBreakEnabled = sentenceBreakEnabled
         self.fillerWordsEnabled = fillerWordsEnabled
         self.customRules = customRules
+        self.mode = mode
+        self.language = language
+        self.glossary = glossary
     }
 }
 
@@ -30,7 +39,11 @@ public enum LLMRulePrompt {
         4. 只返回修正后的文本，不要解释
         5. 不要输出思考过程、分析步骤、标题、标签、Markdown 或任何额外说明
         6. 输出内容必须只有最终文本本身
+        7. URL、邮箱、数字、金额、日期、代码片段、命令、文件路径必须保持不变，除非原文明显识别错误
         """
+
+        prompt += "\n\n纠错强度：\n\(rules.mode.promptInstruction)"
+        prompt += "\n\n识别语言：\(rules.language)"
 
         var styleRules: [String] = []
         if rules.punctuationEnabled {
@@ -50,9 +63,14 @@ public enum LLMRulePrompt {
             }
         }
 
+        let glossary = LLMCorrectionGlossary.promptSection(from: rules.glossary)
+        if !glossary.isEmpty {
+            prompt += "\n\n用户术语表：\n\(glossary)\n\n如果输入中出现术语表里的别名或同音误识别，优先修正为标准写法；不要凭空加入术语。"
+        }
+
         let customRules = rules.customRules.trimmingCharacters(in: .whitespacesAndNewlines)
         if !customRules.isEmpty {
-            prompt += "\n\n用户附加规则：\n\(customRules)\n\n附加规则不能覆盖底线规则。"
+            prompt += "\n\n用户附加保守规则：\n\(customRules)\n\n附加规则不能覆盖底线规则。"
         }
 
         return prompt

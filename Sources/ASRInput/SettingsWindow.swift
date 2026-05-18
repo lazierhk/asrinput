@@ -1,4 +1,5 @@
 import Cocoa
+import LLMRuleCore
 
 final class SettingsWindow: NSWindowController {
     private var hotkeyRecorder: HotkeyRecorderView?
@@ -6,7 +7,7 @@ final class SettingsWindow: NSWindowController {
 
     convenience init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 640),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -256,10 +257,14 @@ final class SettingsWindow: NSWindowController {
     private var llmModelField: NSTextField?
     private var llmStatusLabel: NSTextField?
     private var llmEnabledCheck: NSButton?
+    private var llmModePopup: NSPopUpButton?
     private var llmPunctuationCheck: NSButton?
     private var llmSentenceBreakCheck: NSButton?
     private var llmFillerWordsCheck: NSButton?
     private var llmCustomRulesTextView: NSTextView?
+    private var llmGlossaryTextView: NSTextView?
+    private var llmPreviewInputTextView: NSTextView?
+    private var llmPreviewOutputLabel: NSTextField?
 
     private func makeLLMView() -> NSView {
         let container = NSView()
@@ -300,6 +305,16 @@ final class SettingsWindow: NSWindowController {
         modelField.widthAnchor.constraint(equalToConstant: 280).isActive = true
         self.llmModelField = modelField
 
+        let modeLabel = makeLabel("纠错强度:")
+        let modePopup = NSPopUpButton()
+        modePopup.translatesAutoresizingMaskIntoConstraints = false
+        modePopup.addItems(withTitles: LLMCorrectionMode.allCases.map(\.displayName))
+        if let index = LLMCorrectionMode.allCases.firstIndex(of: Preferences.shared.llmCorrectionMode) {
+            modePopup.selectItem(at: index)
+        }
+        modePopup.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        self.llmModePopup = modePopup
+
         let rulesLabel = makeLabel("整理规则:")
         let punctuationCheck = NSButton(
             checkboxWithTitle: "补全标点",
@@ -330,7 +345,7 @@ final class SettingsWindow: NSWindowController {
         rulesStack.alignment = .leading
         rulesStack.spacing = 4
 
-        let customRulesLabel = makeLabel("自定义规则:")
+        let customRulesLabel = makeLabel("附加保守规则:")
         let customRulesTextView = NSTextView()
         customRulesTextView.string = Preferences.shared.llmCustomRules
         customRulesTextView.font = .systemFont(ofSize: 12)
@@ -345,24 +360,74 @@ final class SettingsWindow: NSWindowController {
         customRulesScroll.borderType = .bezelBorder
         customRulesScroll.documentView = customRulesTextView
         customRulesScroll.widthAnchor.constraint(equalToConstant: 280).isActive = true
-        customRulesScroll.heightAnchor.constraint(equalToConstant: 72).isActive = true
+        customRulesScroll.heightAnchor.constraint(equalToConstant: 54).isActive = true
+
+        let glossaryLabel = makeLabel("术语词典:")
+        let glossaryTextView = NSTextView()
+        glossaryTextView.string = Preferences.shared.llmGlossary
+        glossaryTextView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        glossaryTextView.isRichText = false
+        glossaryTextView.allowsUndo = true
+        glossaryTextView.textContainerInset = NSSize(width: 6, height: 6)
+        self.llmGlossaryTextView = glossaryTextView
+
+        let glossaryScroll = NSScrollView()
+        glossaryScroll.translatesAutoresizingMaskIntoConstraints = false
+        glossaryScroll.hasVerticalScroller = true
+        glossaryScroll.borderType = .bezelBorder
+        glossaryScroll.documentView = glossaryTextView
+        glossaryScroll.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        glossaryScroll.heightAnchor.constraint(equalToConstant: 78).isActive = true
+
+        let previewLabel = makeLabel("测试纠错:")
+        let previewInputTextView = NSTextView()
+        previewInputTextView.string = "今天我们用配森处理 JSON 数据，接口是 https://example.com/v1。"
+        previewInputTextView.font = .systemFont(ofSize: 12)
+        previewInputTextView.isRichText = false
+        previewInputTextView.allowsUndo = true
+        previewInputTextView.textContainerInset = NSSize(width: 6, height: 6)
+        self.llmPreviewInputTextView = previewInputTextView
+
+        let previewInputScroll = NSScrollView()
+        previewInputScroll.translatesAutoresizingMaskIntoConstraints = false
+        previewInputScroll.hasVerticalScroller = true
+        previewInputScroll.borderType = .bezelBorder
+        previewInputScroll.documentView = previewInputTextView
+        previewInputScroll.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        previewInputScroll.heightAnchor.constraint(equalToConstant: 56).isActive = true
+
+        let previewOutputLabel = makeLabel("")
+        previewOutputLabel.textColor = .secondaryLabelColor
+        previewOutputLabel.lineBreakMode = .byWordWrapping
+        previewOutputLabel.maximumNumberOfLines = 3
+        previewOutputLabel.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        self.llmPreviewOutputLabel = previewOutputLabel
+
+        let previewStack = NSStackView(views: [previewInputScroll, previewOutputLabel])
+        previewStack.orientation = .vertical
+        previewStack.alignment = .leading
+        previewStack.spacing = 6
 
         let saveBtn = NSButton(title: "保存", target: self, action: #selector(saveLLMConfig))
         saveBtn.keyEquivalent = "\r"
         let testBtn = NSButton(title: "测试连接", target: self, action: #selector(testLLMConnection))
+        let previewBtn = NSButton(title: "测试纠错", target: self, action: #selector(testLLMCorrection))
 
         let statusLabel = makeLabel("")
         statusLabel.textColor = .secondaryLabelColor
         self.llmStatusLabel = statusLabel
 
-        let btnStack = NSStackView(views: [saveBtn, testBtn, statusLabel])
+        let btnStack = NSStackView(views: [saveBtn, testBtn, previewBtn, statusLabel])
         btnStack.spacing = 12
 
         grid.addRow(with: [urlLabel, urlField])
         grid.addRow(with: [keyLabel, keyField])
         grid.addRow(with: [modelLabel, modelField])
+        grid.addRow(with: [modeLabel, modePopup])
         grid.addRow(with: [rulesLabel, rulesStack])
+        grid.addRow(with: [glossaryLabel, glossaryScroll])
         grid.addRow(with: [customRulesLabel, customRulesScroll])
+        grid.addRow(with: [previewLabel, previewStack])
         grid.addRow(with: [NSGridCell.emptyContentView, btnStack])
         grid.column(at: 0).xPlacement = .trailing
 
@@ -385,10 +450,15 @@ final class SettingsWindow: NSWindowController {
         Preferences.shared.llmBaseURL = llmBaseURLField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         Preferences.shared.llmAPIKey  = llmAPIKeyField?.stringValue ?? ""
         Preferences.shared.llmModel   = llmModelField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let index = llmModePopup?.indexOfSelectedItem,
+           LLMCorrectionMode.allCases.indices.contains(index) {
+            Preferences.shared.llmCorrectionMode = LLMCorrectionMode.allCases[index]
+        }
         Preferences.shared.llmPunctuationEnabled = llmPunctuationCheck?.state == .on
         Preferences.shared.llmSentenceBreakEnabled = llmSentenceBreakCheck?.state == .on
         Preferences.shared.llmFillerWordsEnabled = llmFillerWordsCheck?.state == .on
         Preferences.shared.llmCustomRules = llmCustomRulesTextView?.string.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        Preferences.shared.llmGlossary = llmGlossaryTextView?.string.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         llmStatusLabel?.stringValue   = "已保存 ✓"
         llmStatusLabel?.textColor     = .systemGreen
     }
@@ -401,6 +471,30 @@ final class SettingsWindow: NSWindowController {
             DispatchQueue.main.async {
                 self?.llmStatusLabel?.stringValue = message
                 self?.llmStatusLabel?.textColor = success ? .systemGreen : .systemRed
+            }
+        }
+    }
+
+    @objc private func testLLMCorrection() {
+        saveLLMConfig()
+        let rawText = llmPreviewInputTextView?.string.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !rawText.isEmpty else {
+            llmPreviewOutputLabel?.stringValue = "请输入测试文本"
+            llmPreviewOutputLabel?.textColor = .systemRed
+            return
+        }
+
+        llmStatusLabel?.stringValue = "纠错测试中…"
+        llmStatusLabel?.textColor = .secondaryLabelColor
+        llmPreviewOutputLabel?.stringValue = "等待模型返回…"
+        llmPreviewOutputLabel?.textColor = .secondaryLabelColor
+
+        LLMRefiner().refineDecision(rawText) { [weak self] decision in
+            DispatchQueue.main.async {
+                self?.llmStatusLabel?.stringValue = decision.accepted ? "纠错已接受 ✓" : "已回退原文"
+                self?.llmStatusLabel?.textColor = decision.accepted ? .systemGreen : .systemOrange
+                self?.llmPreviewOutputLabel?.stringValue = "\(decision.reason)\n\(decision.text)"
+                self?.llmPreviewOutputLabel?.textColor = decision.accepted ? .labelColor : .secondaryLabelColor
             }
         }
     }

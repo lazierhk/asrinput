@@ -37,6 +37,8 @@ require(!selectivePrompt.contains("拆分过长的句子"), "omits disabled sent
 require(!selectivePrompt.contains("删除明显无意义的口头填充词"), "omits disabled filler-word rule")
 require(selectivePrompt.contains("公司名 Acme 不要改成艾克米"), "includes trimmed custom rules")
 require(defaultPrompt.contains("不要输出思考过程"), "prompt forbids chain-of-thought output")
+require(defaultPrompt.contains("严格保守"), "prompt includes default correction mode")
+require(defaultPrompt.contains("URL、邮箱、数字"), "prompt protects structured tokens")
 
 let leakedThinkingOutput = """
 Here's a thinking process:
@@ -71,6 +73,60 @@ require(
         == "你好啊，你好啊，我想知道明天是什么天气。",
     "keeps clean output unchanged"
 )
+
+let glossary = """
+Python = 配森, 派森
+JSON = 杰森
+ASRInput = ASR input, asr input
+"""
+let entries = LLMCorrectionGlossary.parse(glossary)
+require(entries.count == 3, "parses glossary entries")
+require(entries[0].canonical == "Python", "keeps glossary canonical term")
+require(entries[0].aliases == ["配森", "派森"], "parses glossary aliases")
+
+let glossaryPrompt = LLMRulePrompt.buildSystemPrompt(
+    rules: LLMRuleSettings(
+        punctuationEnabled: true,
+        sentenceBreakEnabled: true,
+        fillerWordsEnabled: true,
+        customRules: "",
+        mode: .terminologyFocused,
+        language: "zh-CN",
+        glossary: glossary
+    )
+)
+require(glossaryPrompt.contains("术语优先"), "prompt includes selected correction mode")
+require(glossaryPrompt.contains("Python：配森、派森"), "prompt includes glossary section")
+
+let acceptedDecision = LLMCorrectionGuard.evaluate(
+    original: "我用配森处理杰森数据。",
+    candidate: "我用 Python 处理 JSON 数据。",
+    mode: .terminologyFocused
+)
+require(acceptedDecision.accepted, "accepts safe terminology correction")
+require(acceptedDecision.text.contains("Python"), "returns accepted correction text")
+
+let protectedURLDecision = LLMCorrectionGuard.evaluate(
+    original: "接口是 https://example.com/v1 价格是 120 元。",
+    candidate: "接口已经配置好了，价格是一百二十元。",
+    mode: .strict
+)
+require(!protectedURLDecision.accepted, "rejects correction that drops protected URL and number")
+require(protectedURLDecision.text.contains("https://example.com/v1"), "falls back to original when protected token is lost")
+
+let overRewriteDecision = LLMCorrectionGuard.evaluate(
+    original: "明天开会。",
+    candidate: "我们计划在明天召开一次重要会议，并提前准备完整材料。",
+    mode: .strict
+)
+require(!overRewriteDecision.accepted, "rejects excessive rewrite")
+
+let explanationDecision = LLMCorrectionGuard.evaluate(
+    original: "这个文本正确。",
+    candidate: "修正说明：原文没有问题。\n这个文本正确。",
+    mode: .strict
+)
+require(!explanationDecision.accepted, "rejects explanatory model output")
 
 let hudMetrics = OverlayHUDMetrics()
 let minHUDTextWidth = OverlayHUDLayout.textWidth(naturalWidth: 20, metrics: hudMetrics)
