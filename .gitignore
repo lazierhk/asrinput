@@ -1,0 +1,12 @@
+.DS_Store
+
+# Swift Package Manager build output
+.build/
+
+# Generated macOS app bundle and disk images
+ASRInput.app/
+*.dmg
+
+# Local agent/runtime state
+.omx/
+.claude/
