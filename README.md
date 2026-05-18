@@ -3,7 +3,9 @@
 > 一个轻量、安静、顺手的 macOS 菜单栏语音输入工具。<br>
 > Speak once. Paste anywhere.
 
-ASRInput 可以把你的语音转换成文字，并自动输入到当前正在使用的 App 里。它支持 macOS 原生 Apple Speech、OpenAI 兼容的 Whisper 接口、全局快捷键、Liquid Glass 风格浮层，以及非常保守的 LLM 文本纠错。
+💡 灵感来源：[yetone/voice-input-src](https://github.com/yetone/voice-input-src)。
+
+ASRInput 可以把你的语音转换成文字，并自动输入到当前正在使用的 App 里。它主要面向通过本机运行的大模型 ASR 模型完成语音输入，并结合本地规则或 LLM 对识别结果做保守修正；同时支持 macOS 原生 Apple Speech、OpenAI 兼容的 Whisper 接口、全局快捷键和 Liquid Glass 风格浮层。
 
 ---
 
