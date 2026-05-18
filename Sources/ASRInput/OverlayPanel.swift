@@ -145,8 +145,12 @@ final class OverlayPanel: NSPanel {
     }
 
     private func clampedTextWidth(_ text: String) -> CGFloat {
-        let attrs: [NSAttributedString.Key: Any] = [.font: textLabel.font!]
-        let natural = (text as NSString).size(withAttributes: attrs).width + 8
+        let fontSize = textLabel.font?.pointSize ?? NSFont.systemFontSize
+        let sampledText = text.prefix(120)
+        let weightedUnits = sampledText.reduce(0.0) { total, character in
+            total + (character.isASCII ? 0.58 : 1.0)
+        }
+        let natural = weightedUnits * Double(fontSize) + 8
         return CGFloat(
             OverlayHUDLayout.textWidth(
                 naturalWidth: Double(natural),

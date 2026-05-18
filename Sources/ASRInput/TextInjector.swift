@@ -5,26 +5,39 @@ final class TextInjector {
 
     func inject(_ text: String) {
         guard !text.isEmpty else { return }
+        if Thread.isMainThread {
+            injectOnMain(text)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.injectOnMain(text)
+            }
+        }
+    }
 
+    private func injectOnMain(_ text: String) {
         let pb = NSPasteboard.general
         let savedItems = saveClipboard(pb)
 
         let switched = switcher.switchToASCIIIfNeeded()
-        if switched { Thread.sleep(forTimeInterval: 0.06) }
+        let pasteDelay: TimeInterval = switched ? 0.06 : 0
 
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+        DispatchQueue.main.asyncAfter(deadline: .now() + pasteDelay) { [weak self] in
+            guard let self else { return }
+            pb.clearContents()
+            pb.setString(text, forType: .string)
 
-        simulatePaste()
-        Thread.sleep(forTimeInterval: 0.12)
+            self.simulatePaste()
 
-        if switched {
-            switcher.restoreIfNeeded()
-            Thread.sleep(forTimeInterval: 0.05)
-        }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                guard let self else { return }
+                if switched {
+                    self.switcher.restoreIfNeeded()
+                }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.restoreClipboard(pb, items: savedItems)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    self?.restoreClipboard(pb, items: savedItems)
+                }
+            }
         }
 
         AppLogger.inject.info("Injected \(text.count) chars")
