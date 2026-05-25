@@ -27,8 +27,10 @@ final class SpeechTranscriber: NSObject, Transcriber, SFSpeechRecognizerDelegate
     private var stopCompletion: ((String) -> Void)?
     private var finalText = ""
     private var isStopping = false
+    private var hasInputTap = false
 
     func start(language: String, completion: @escaping (Error?) -> Void) {
+        cleanupAudioCapture()
         isStopping = false
         finalText = ""
 
@@ -49,18 +51,26 @@ final class SpeechTranscriber: NSObject, Transcriber, SFSpeechRecognizerDelegate
 
         let inputNode = engine.inputNode
         let fmt = inputNode.outputFormat(forBus: 0)
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else {
+            completion(NSError(domain: "SpeechTranscriber", code: 2,
+                               userInfo: [NSLocalizedDescriptionKey: "输入设备音频格式无效，请检查麦克风设备。"]))
+            return
+        }
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buf, _ in
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             guard let self else { return }
             self.request?.append(buf)
             let rms = Self.computeRMS(buf)
             DispatchQueue.main.async { self.onLevel?(rms) }
         }
+        hasInputTap = true
 
         do {
+            engine.prepare()
             try engine.start()
         } catch {
-            inputNode.removeTap(onBus: 0)
+            cleanupAudioCapture()
             completion(error)
             return
         }
@@ -100,8 +110,7 @@ final class SpeechTranscriber: NSObject, Transcriber, SFSpeechRecognizerDelegate
         silenceTimer = nil
 
         request?.endAudio()
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        cleanupAudioCapture()
 
         // Give recognizer a moment to finalize
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
@@ -137,13 +146,23 @@ final class SpeechTranscriber: NSObject, Transcriber, SFSpeechRecognizerDelegate
         guard let completion = stopCompletion else { return }
         isStopping = true
         silenceTimer?.invalidate()
-        engine.inputNode.removeTap(onBus: 0)
-        if engine.isRunning { engine.stop() }
+        cleanupAudioCapture()
         task = nil
         request = nil
         stopCompletion = nil
         finalText = ""
         completion(text)
+    }
+
+    private func cleanupAudioCapture() {
+        if hasInputTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
+        engine.reset()
     }
 
     static func computeRMS(_ buf: AVAudioPCMBuffer) -> Float {

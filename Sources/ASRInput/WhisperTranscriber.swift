@@ -5,14 +5,14 @@ final class WhisperTranscriber: Transcriber {
     var onPartial: ((String) -> Void)?
     var onLevel:   ((Float) -> Void)?
 
-    private let engine = AVAudioEngine()
-    private var audioFile: AVAudioFile?
+    private var recorder: AVAudioRecorder?
+    private var levelTimer: Timer?
     private var tempURL: URL?
     private var language: String = "zh"
     private var isStopping = false
-    private var levelTimer: Timer?
 
     func start(language: String, completion: @escaping (Error?) -> Void) {
+        cleanupAudioCapture(removeTempFile: true)
         isStopping = false
         self.language = String(language.prefix(2))  // "zh-CN" → "zh"
 
@@ -20,29 +20,25 @@ final class WhisperTranscriber: Transcriber {
             .appendingPathComponent("asrinput_\(UUID().uuidString).wav")
         tempURL = url
 
-        let inputNode = engine.inputNode
-        let fmt = inputNode.outputFormat(forBus: 0)
-
         do {
-            audioFile = try AVAudioFile(forWriting: url, settings: fmt.settings)
+            let recorder = try AVAudioRecorder(url: url, settings: Self.recordingSettings)
+            recorder.isMeteringEnabled = true
+            guard recorder.record() else {
+                cleanupAudioCapture(removeTempFile: true)
+                completion(Self.error("无法开始录音，请检查麦克风权限和输入设备。"))
+                return
+            }
+            self.recorder = recorder
         } catch {
+            cleanupAudioCapture(removeTempFile: true)
             completion(error)
             return
         }
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buf, _ in
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
             guard let self else { return }
-            try? self.audioFile?.write(from: buf)
-            let rms = SpeechTranscriber.computeRMS(buf)
-            DispatchQueue.main.async { self.onLevel?(rms) }
-        }
-
-        do {
-            try engine.start()
-        } catch {
-            inputNode.removeTap(onBus: 0)
-            completion(error)
-            return
+            self.recorder?.updateMeters()
+            self.onLevel?(Self.normalizedLevel(fromDecibels: self.recorder?.averagePower(forChannel: 0) ?? -160))
         }
 
         completion(nil)
@@ -50,12 +46,13 @@ final class WhisperTranscriber: Transcriber {
     }
 
     func stop(completion: @escaping (String) -> Void) {
-        guard !isStopping else { return }
+        guard !isStopping else {
+            completion("")
+            return
+        }
         isStopping = true
 
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        audioFile = nil
+        cleanupAudioCapture(removeTempFile: false)
 
         guard let url = tempURL else {
             completion("")
@@ -73,6 +70,37 @@ final class WhisperTranscriber: Transcriber {
             try? FileManager.default.removeItem(at: url)
             AppLogger.whisper.info("WhisperTranscriber stopped, result length: \(text.count)")
         }
+    }
+
+    private func cleanupAudioCapture(removeTempFile: Bool) {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        if recorder?.isRecording == true {
+            recorder?.stop()
+        }
+        recorder = nil
+        if removeTempFile, let tempURL {
+            try? FileManager.default.removeItem(at: tempURL)
+            self.tempURL = nil
+        }
+    }
+
+    private static let recordingSettings: [String: Any] = [
+        AVFormatIDKey: Int(kAudioFormatLinearPCM),
+        AVSampleRateKey: 16_000.0,
+        AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsFloatKey: false
+    ]
+
+    private static func normalizedLevel(fromDecibels decibels: Float) -> Float {
+        guard decibels.isFinite, decibels > -80 else { return 0 }
+        return min(max(pow(10, decibels / 35), 0), 1)
+    }
+
+    private static func error(_ message: String) -> NSError {
+        NSError(domain: "WhisperTranscriber", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     static func transcribe(url: URL, endpoint: String, model: String, apiKey: String, language: String) -> String {
