@@ -10,10 +10,14 @@ final class WhisperTranscriber: Transcriber {
     private var tempURL: URL?
     private var language: String = "zh"
     private var isStopping = false
+    private var startTime: Date?
+    private var peakLevel: Float = -160
 
     func start(language: String, completion: @escaping (Error?) -> Void) {
         cleanupAudioCapture(removeTempFile: true)
         isStopping = false
+        startTime = Date()
+        peakLevel = -160
         self.language = String(language.prefix(2))  // "zh-CN" → "zh"
 
         let url = FileManager.default.temporaryDirectory
@@ -38,7 +42,10 @@ final class WhisperTranscriber: Transcriber {
         levelTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.recorder?.updateMeters()
-            self.onLevel?(Self.normalizedLevel(fromDecibels: self.recorder?.averagePower(forChannel: 0) ?? -160))
+            let averagePower = self.recorder?.averagePower(forChannel: 0) ?? -160
+            let peakPower = self.recorder?.peakPower(forChannel: 0) ?? -160
+            self.peakLevel = max(self.peakLevel, peakPower)
+            self.onLevel?(Self.normalizedLevel(fromDecibels: averagePower))
         }
 
         completion(nil)
@@ -63,12 +70,25 @@ final class WhisperTranscriber: Transcriber {
         let model = Preferences.shared.whisperModel
         let apiKey = Preferences.shared.whisperAPIKey
         let lang = language
+        let recordingDuration = startTime.map { Date().timeIntervalSince($0) } ?? 0
+        let peakLevel = peakLevel
+        startTime = nil
+        self.peakLevel = -160
 
         DispatchQueue.global(qos: .userInitiated).async {
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            AppLogger.whisper.info(
+                "Whisper audio ready, duration: \(recordingDuration, privacy: .public)s, bytes: \(fileSize, privacy: .public), peak dB: \(peakLevel, privacy: .public)"
+            )
             let text = Self.transcribe(url: url, endpoint: endpoint, model: model, apiKey: apiKey, language: lang)
             DispatchQueue.main.async { completion(text) }
-            try? FileManager.default.removeItem(at: url)
-            AppLogger.whisper.info("WhisperTranscriber stopped, result length: \(text.count)")
+            let shouldKeepForDiagnostics = recordingDuration >= 3 && text.count <= 2
+            if shouldKeepForDiagnostics {
+                AppLogger.whisper.warning("Keeping short-result diagnostic audio at \(url.path, privacy: .public)")
+            } else {
+                try? FileManager.default.removeItem(at: url)
+            }
+            AppLogger.whisper.info("WhisperTranscriber stopped, result length: \(text.count, privacy: .public)")
         }
     }
 

@@ -1,5 +1,7 @@
 import Cocoa
+import AVFoundation
 import LLMRuleCore
+import Speech
 
 final class SettingsWindow: NSWindowController {
     private var hotkeyRecorder: HotkeyRecorderView?
@@ -45,6 +47,11 @@ final class SettingsWindow: NSWindowController {
         llmTab.label = "LLM 优化"
         llmTab.view = makeLLMView()
         tabView.addTabViewItem(llmTab)
+
+        let diagnosticsTab = NSTabViewItem(identifier: "diagnostics")
+        diagnosticsTab.label = "诊断"
+        diagnosticsTab.view = makeDiagnosticsView()
+        tabView.addTabViewItem(diagnosticsTab)
     }
 
     // MARK: - Hotkey Tab
@@ -495,6 +502,145 @@ final class SettingsWindow: NSWindowController {
                 self?.llmStatusLabel?.textColor = decision.accepted ? .systemGreen : .systemOrange
                 self?.llmPreviewOutputLabel?.stringValue = "\(decision.reason)\n\(decision.text)"
                 self?.llmPreviewOutputLabel?.textColor = decision.accepted ? .labelColor : .secondaryLabelColor
+            }
+        }
+    }
+
+    // MARK: - Diagnostics Tab
+
+    private var diagnosticsRows: [String: NSTextField] = [:]
+
+    private func makeDiagnosticsView() -> NSView {
+        let container = NSView()
+
+        let grid = NSGridView()
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.columnSpacing = 12
+        grid.rowSpacing = 12
+        container.addSubview(grid)
+
+        addDiagnosticsRow(to: grid, key: "microphone", title: "麦克风权限")
+        addDiagnosticsRow(to: grid, key: "accessibility", title: "辅助功能权限")
+        addDiagnosticsRow(to: grid, key: "speech", title: "Apple Speech")
+        addDiagnosticsRow(to: grid, key: "backend", title: "当前识别后端")
+        addDiagnosticsRow(to: grid, key: "whisper", title: "Whisper HTTP")
+        addDiagnosticsRow(to: grid, key: "llm", title: "LLM 连接")
+        addDiagnosticsRow(to: grid, key: "last", title: "上一条转写")
+
+        let refreshButton = NSButton(title: "刷新", target: self, action: #selector(refreshDiagnostics))
+        refreshButton.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(refreshButton)
+
+        NSLayoutConstraint.activate([
+            grid.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
+            grid.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+            grid.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -24),
+
+            refreshButton.topAnchor.constraint(equalTo: grid.bottomAnchor, constant: 18),
+            refreshButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+        ])
+
+        grid.column(at: 0).xPlacement = .trailing
+        refreshDiagnostics()
+
+        return container
+    }
+
+    private func addDiagnosticsRow(to grid: NSGridView, key: String, title: String) {
+        let titleLabel = makeLabel(title + ":")
+        let valueLabel = makeLabel("待检查")
+        valueLabel.textColor = .secondaryLabelColor
+        valueLabel.lineBreakMode = .byWordWrapping
+        valueLabel.maximumNumberOfLines = 2
+        valueLabel.widthAnchor.constraint(equalToConstant: 390).isActive = true
+        diagnosticsRows[key] = valueLabel
+        grid.addRow(with: [titleLabel, valueLabel])
+    }
+
+    @objc private func refreshDiagnostics() {
+        updateDiagnosticsRow("microphone", microphoneStatus())
+        updateDiagnosticsRow("accessibility", PermissionManager.checkAccessibility(prompt: false) ? "已授权" : "未授权")
+        updateDiagnosticsRow("speech", speechStatus())
+        updateDiagnosticsRow("backend", Preferences.shared.sttBackend.rawValue)
+        updateDiagnosticsRow("last", LastTranscriptionStore.shared.latest == nil ? "无" : "有")
+        checkWhisperDiagnostics()
+        checkLLMDiagnostics()
+    }
+
+    private func updateDiagnosticsRow(_ key: String, _ value: String, color: NSColor = .secondaryLabelColor) {
+        diagnosticsRows[key]?.stringValue = value
+        diagnosticsRows[key]?.textColor = color
+    }
+
+    private func microphoneStatus() -> String {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return "已授权"
+        case .notDetermined:
+            return "未请求"
+        case .denied:
+            return "已拒绝"
+        case .restricted:
+            return "受限制"
+        @unknown default:
+            return "未知"
+        }
+    }
+
+    private func speechStatus() -> String {
+        let authorization: String
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            authorization = "已授权"
+        case .notDetermined:
+            authorization = "未请求"
+        case .denied:
+            authorization = "已拒绝"
+        case .restricted:
+            authorization = "受限制"
+        @unknown default:
+            authorization = "未知"
+        }
+
+        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: Preferences.shared.language))
+        let availability = recognizer?.isAvailable == true ? "可用" : "不可用"
+        return "\(authorization)，\(availability)"
+    }
+
+    private func checkWhisperDiagnostics() {
+        updateDiagnosticsRow("whisper", "检查中…")
+        guard let url = URL(string: Preferences.shared.whisperEndpoint + "/v1/models") else {
+            updateDiagnosticsRow("whisper", "URL 格式错误", color: .systemRed)
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        WhisperTranscriber.setAuthorizationHeader(on: &request, apiKey: Preferences.shared.whisperAPIKey)
+
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self?.updateDiagnosticsRow("whisper", "连接失败: \(error.localizedDescription)", color: .systemRed)
+                    return
+                }
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                self?.updateDiagnosticsRow(
+                    "whisper",
+                    "HTTP \(code) \(code > 0 && code < 400 ? "✓" : "✗")",
+                    color: code > 0 && code < 400 ? .systemGreen : .systemRed
+                )
+            }
+        }.resume()
+    }
+
+    private func checkLLMDiagnostics() {
+        updateDiagnosticsRow("llm", Preferences.shared.llmBaseURL.isEmpty ? "未配置" : "检查中…")
+        guard !Preferences.shared.llmBaseURL.isEmpty else { return }
+
+        LLMRefiner().testConnection { [weak self] success, message in
+            DispatchQueue.main.async {
+                self?.updateDiagnosticsRow("llm", message, color: success ? .systemGreen : .systemRed)
             }
         }
     }
