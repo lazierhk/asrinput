@@ -352,6 +352,8 @@ final class SettingsWindow: NSWindowController {
             promptModePopup.selectItem(at: index)
         }
         promptModePopup.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        promptModePopup.target = self
+        promptModePopup.action = #selector(saveLLMConfig)
         self.llmPromptModePopup = promptModePopup
 
         let appAwareCheck = NSButton(
@@ -360,6 +362,8 @@ final class SettingsWindow: NSWindowController {
             action: nil
         )
         appAwareCheck.state = Preferences.shared.appAwarePromptModeEnabled ? .on : .off
+        appAwareCheck.target = self
+        appAwareCheck.action = #selector(saveLLMConfig)
         self.appAwarePromptModeCheck = appAwareCheck
 
         let autoPauseCheck = NSButton(
@@ -368,6 +372,8 @@ final class SettingsWindow: NSWindowController {
             action: nil
         )
         autoPauseCheck.state = Preferences.shared.autoPauseMedia ? .on : .off
+        autoPauseCheck.target = self
+        autoPauseCheck.action = #selector(saveLLMConfig)
         self.autoPauseMediaCheck = autoPauseCheck
 
         let behaviorStack = NSStackView(views: [appAwareCheck, autoPauseCheck])

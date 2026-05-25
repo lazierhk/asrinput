@@ -197,13 +197,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
 
     private func pauseMediaIfNeeded() {
         guard Preferences.shared.autoPauseMedia, !mediaPausedForRecording else { return }
-        MediaPlaybackController.togglePlayPause()
+        let posted = MediaPlaybackController.togglePlayPause()
+        AppLogger.main.info("Auto media pause requested, event posted: \(posted, privacy: .public)")
         mediaPausedForRecording = true
     }
 
     private func resumeMediaIfNeeded() {
         guard mediaPausedForRecording else { return }
-        MediaPlaybackController.togglePlayPause()
+        let posted = MediaPlaybackController.togglePlayPause()
+        AppLogger.main.info("Auto media resume requested, event posted: \(posted, privacy: .public)")
         mediaPausedForRecording = false
     }
 
