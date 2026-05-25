@@ -13,11 +13,13 @@ final class WaveformView: NSView {
         }
     }
 
-    private let weights: [CGFloat] = [
-        0.42, 0.56, 0.76, 0.94, 1.10, 0.84, 1.18, 0.98, 1.36,
-        0.98, 1.18, 0.84, 1.10, 0.94, 0.76, 0.56, 0.42
-    ]
-    private var bars: [CGFloat] = Array(repeating: 0, count: 17)
+    private let weights: [CGFloat] = (0..<48).map { index in
+        let center = CGFloat(47) / 2
+        let distance = abs(CGFloat(index) - center) / center
+        let ripple = 0.12 * sin(CGFloat(index) * 0.92)
+        return max(0.34, 1.0 - 0.48 * distance + ripple)
+    }
+    private var bars: [CGFloat] = Array(repeating: 0, count: 48)
     private var timer: Timer?
 
     override init(frame: NSRect) {
@@ -49,19 +51,19 @@ final class WaveformView: NSView {
         let input = max(0, min(1, CGFloat(inputLevel)))
         let voiceLevel = normalizedVoiceLevel(from: input)
         let time = Date().timeIntervalSinceReferenceDate
-        let refiningPulse = mode == .refining ? 0.18 + 0.08 * sin(time * 2.0) : 0
+        let refiningPulse = mode == .refining ? 0.14 + 0.08 * sin(time * 2.0) : 0
 
         for i in 0..<weights.count {
-            let phase = Double(i) * 0.68
+            let phase = Double(i) * 0.46
             let idleDepth: CGFloat = reduceMotion ? 0.001 : 0.002
-            let idleBase: CGFloat = reduceMotion ? 0.002 : 0.003
-            let idlePulse = idleBase + idleDepth * sin(time * 3.2 + phase)
+            let idleBase: CGFloat = reduceMotion ? 0.003 : 0.005
+            let idlePulse = idleBase + idleDepth * sin(time * 2.7 + phase)
             let modePulse = CGFloat(refiningPulse) * weights[i] * (reduceMotion ? 0.42 : 0.72)
-            let jitterRange = reduceMotion ? 0 : 0.004 + 0.014 * voiceLevel
+            let jitterRange = reduceMotion ? 0 : 0.002 + 0.010 * voiceLevel
             let jitter = CGFloat.random(in: -jitterRange...jitterRange)
             let raw = idlePulse + max(voiceLevel, modePulse) * weights[i] + jitter
             let target = max(0.001, min(1, raw))
-            let alpha: CGFloat = target > bars[i] ? 0.82 : 0.34
+            let alpha: CGFloat = target > bars[i] ? 0.72 : 0.26
             bars[i] += alpha * (target - bars[i])
         }
         needsDisplay = true
@@ -80,12 +82,13 @@ final class WaveformView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 
         let totalBars = weights.count
-        let barWidth: CGFloat = 6
-        let gap: CGFloat = 7
+        let barWidth: CGFloat = 2.4
+        let gap: CGFloat = 3.0
         let minH: CGFloat = 1.2
-        let maxH: CGFloat = max(14, bounds.height - 2)
-        let cornerRadius: CGFloat = 3
+        let maxH: CGFloat = max(12, bounds.height - 6)
+        let cornerRadius: CGFloat = 1.2
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let isRefining = mode == .refining
 
         let totalWidth = CGFloat(totalBars) * barWidth + CGFloat(totalBars - 1) * gap
         let startX = (bounds.width - totalWidth) / 2
@@ -101,46 +104,55 @@ final class WaveformView: NSView {
             let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
             let distanceFromCenter = abs(CGFloat(i) - CGFloat(totalBars - 1) / 2) / (CGFloat(totalBars) / 2)
             let centerBoost = 1 - distanceFromCenter
-            let glowAlpha = (reduceMotion ? 0.18 : 0.30) + 0.50 * response
-            let fillAlpha = 0.54 + 0.38 * response
+            let glowAlpha = (reduceMotion ? 0.10 : 0.16) + 0.34 * response
+            let fillAlpha = 0.36 + 0.46 * response
+            let baseRed: CGFloat = isRefining ? 1.0 : 0.20
+            let baseGreen: CGFloat = isRefining ? 0.72 : 0.82
+            let baseBlue: CGFloat = isRefining ? 0.28 : 1.0
 
             ctx.saveGState()
             ctx.setShadow(
                 offset: .zero,
-                blur: reduceMotion ? 6 : 9 + 12 * response,
-                color: NSColor(calibratedRed: 0.18, green: 0.88, blue: 1.0, alpha: glowAlpha).cgColor
+                blur: reduceMotion ? 4 : 6 + 10 * response,
+                color: NSColor(calibratedRed: baseRed, green: baseGreen, blue: baseBlue, alpha: glowAlpha).cgColor
             )
             NSColor(
-                calibratedRed: 0.16 + 0.18 * centerBoost,
-                green: 0.82 + 0.12 * centerBoost,
-                blue: 1.0,
+                calibratedRed: min(1, baseRed + 0.14 * centerBoost),
+                green: min(1, baseGreen + 0.10 * centerBoost),
+                blue: min(1, baseBlue + 0.08 * centerBoost),
                 alpha: fillAlpha
             ).setFill()
             path.fill()
             ctx.restoreGState()
 
-            NSColor(calibratedRed: 0.76, green: 0.98, blue: 1.0, alpha: 0.62 + 0.24 * response).setFill()
-            let highlight = rect.insetBy(dx: 1.5, dy: 1.4)
-            NSBezierPath(roundedRect: highlight, xRadius: 1.1, yRadius: 1.1).fill()
+            NSColor(calibratedWhite: 1.0, alpha: 0.26 + 0.18 * response).setFill()
+            let highlight = rect.insetBy(dx: 0.7, dy: 1.2)
+            if highlight.width > 0, highlight.height > 0 {
+                NSBezierPath(roundedRect: highlight, xRadius: 0.7, yRadius: 0.7).fill()
+            }
         }
     }
 
     private func drawCenterGlow(in ctx: CGContext) {
-        let glowRect = bounds.insetBy(dx: 5, dy: bounds.height * 0.20)
+        let glowRect = bounds.insetBy(dx: 6, dy: bounds.height * 0.28)
         let path = NSBezierPath(roundedRect: glowRect, xRadius: glowRect.height / 2, yRadius: glowRect.height / 2)
+        let isRefining = mode == .refining
+        let red: CGFloat = isRefining ? 1.0 : 0.12
+        let green: CGFloat = isRefining ? 0.68 : 0.72
+        let blue: CGFloat = isRefining ? 0.24 : 1.0
 
         ctx.saveGState()
         ctx.setShadow(
             offset: .zero,
-            blur: 22,
-            color: NSColor(calibratedRed: 0.12, green: 0.72, blue: 1.0, alpha: 0.20).cgColor
+            blur: 16,
+            color: NSColor(calibratedRed: red, green: green, blue: blue, alpha: 0.14).cgColor
         )
-        NSColor(calibratedRed: 0.12, green: 0.72, blue: 1.0, alpha: 0.045).setFill()
+        NSColor(calibratedRed: red, green: green, blue: blue, alpha: 0.030).setFill()
         path.fill()
         ctx.restoreGState()
 
-        NSColor(calibratedWhite: 1.0, alpha: 0.08).setStroke()
-        path.lineWidth = 0.8
+        NSColor(calibratedWhite: 1.0, alpha: 0.06).setStroke()
+        path.lineWidth = 0.6
         path.stroke()
     }
 }
