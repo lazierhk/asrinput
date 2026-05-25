@@ -10,7 +10,7 @@ ICON_SRC  = Sources/ASRInput/Resources/AppIconSource.png
 DMG       = .build/$(APP_NAME).dmg
 DMG_DIR   = .build/dmg
 
-.PHONY: all build icon bundle dmg run install clean
+.PHONY: all build icon bundle dmg run relaunch install clean
 
 all: bundle
 
@@ -57,6 +57,12 @@ dmg: bundle
 	@echo "=== DMG ready: $(DMG) ==="
 
 run: bundle
+	@pkill -x $(APP_NAME) 2>/dev/null || true
+	@sleep 0.3
+	open "$(CURDIR)/$(BUNDLE)"
+
+relaunch:
+	@test -d "$(BUNDLE)" || (echo "Missing $(BUNDLE). Run 'make bundle' first." && exit 1)
 	@pkill -x $(APP_NAME) 2>/dev/null || true
 	@sleep 0.3
 	open "$(CURDIR)/$(BUNDLE)"

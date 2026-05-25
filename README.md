@@ -87,6 +87,14 @@ ASRInput.app
 make run
 ```
 
+`make run` 会重新构建并重新签名 `ASRInput.app`。如果已经完成 macOS 辅助功能授权，后续 smoke test 或普通重启建议使用：
+
+```bash
+make relaunch
+```
+
+`make relaunch` 不会重建或重签，只会停止当前 ASRInput 进程并重新打开现有 bundle，可减少 macOS 权限授权反复失效的问题。
+
 ### 5. 安装到 Applications
 
 ```bash
@@ -148,6 +156,7 @@ swift run CoreBehaviorCheck        # 运行当前行为检查
 make build                         # Release 构建
 make bundle                        # 构建 .app 并进行 ad-hoc 签名
 make run                           # 构建、停止旧进程并启动 App
+make relaunch                      # 不重建不重签，仅重启现有 App bundle
 make install                       # 安装到 /Applications
 make dmg                           # 生成 DMG
 make clean                         # 清理生成物
