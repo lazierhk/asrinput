@@ -38,6 +38,15 @@ final class Preferences {
         }
     }
 
+    // MARK: - Paste
+    var clipboardRestoreDelay: TimeInterval {
+        get {
+            let value = defaults.double(forKey: "clipboardRestoreDelay")
+            return value > 0 ? value : 0.2
+        }
+        set { defaults.set(max(newValue, 0.05), forKey: "clipboardRestoreDelay") }
+    }
+
     // MARK: - STT Backend
     var sttBackend: STTBackend {
         get {

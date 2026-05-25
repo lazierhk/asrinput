@@ -1,10 +1,12 @@
 import Cocoa
+import LLMRuleCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate {
     private let menuBar = MenuBarController()
     private let overlay = OverlayPanel()
     private let injector = TextInjector()
     private let llm = LLMRefiner()
+    private lazy var transcriptionPipeline = TranscriptionPipeline(llm: llm, injector: injector)
     private let hotkey = HotkeyManager()
     private var transcriber: any Transcriber
     private var settingsWindow: SettingsWindow?
@@ -70,6 +72,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
         menuBar.rebuildMenu()
     }
 
+    @objc func menuCopyLastTranscription() {
+        guard let text = LastTranscriptionStore.shared.latest?.finalText else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    @objc func menuPasteLastTranscription() {
+        guard let text = LastTranscriptionStore.shared.latest?.finalText else { return }
+        injector.inject(text)
+    }
+
     // MARK: - Settings
 
     func openSettings() {
@@ -113,31 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
 
         transcriber.stop { [weak self] rawText in
             guard let self else { return }
-            let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if text.isEmpty {
-                DispatchQueue.main.async { self.overlay.dismiss() }
-                return
-            }
-
-            DispatchQueue.main.async { self.overlay.updateText(text) }
-
-            if Preferences.shared.llmEnabled && !Preferences.shared.llmBaseURL.isEmpty {
-                DispatchQueue.main.async { self.overlay.showRefining() }
-                self.llm.refine(text) { result in
-                    let final = result ?? text
-                    DispatchQueue.main.async { self.overlay.updateText(final) }
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        self.injector.inject(final)
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.overlay.dismiss() }
-                }
-            } else {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    self.injector.inject(text)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.overlay.dismiss() }
-            }
+            self.transcriptionPipeline.process(rawText: rawText, overlay: self.overlay)
         }
     }
 
@@ -167,6 +157,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
             name: .sttBackendChanged,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleLastTranscriptionChanged),
+            name: .lastTranscriptionChanged,
+            object: nil
+        )
     }
 
     @objc private func handleAutoStop(_ note: Notification) {
@@ -174,31 +170,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
         hotkey.resetRecordingState()
         let text = note.userInfo?["text"] as? String ?? ""
         menuBar.setRecordingState(false)
-
-        if text.isEmpty {
-            overlay.dismiss()
-            return
-        }
-
-        if Preferences.shared.llmEnabled && !Preferences.shared.llmBaseURL.isEmpty {
-            overlay.showRefining()
-            llm.refine(text) { result in
-                let final = result ?? text
-                DispatchQueue.main.async { self.overlay.updateText(final) }
-                DispatchQueue.global(qos: .userInitiated).async { self.injector.inject(final) }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.overlay.dismiss() }
-            }
-        } else {
-            overlay.updateText(text)
-            DispatchQueue.global(qos: .userInitiated).async { self.injector.inject(text) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self.overlay.dismiss() }
-        }
+        transcriptionPipeline.process(rawText: text, overlay: overlay)
     }
 
     @objc private func handleSTTBackendChanged() {
         transcriber = Self.makeTranscriber()
         setupTranscriberCallbacks()
         AppLogger.main.info("STT backend switched to \(Preferences.shared.sttBackend.rawValue)")
+    }
+
+    @objc private func handleLastTranscriptionChanged() {
+        menuBar.updateLastTranscriptionItems()
     }
 
     // MARK: - Permissions

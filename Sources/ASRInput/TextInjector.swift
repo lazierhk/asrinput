@@ -1,6 +1,8 @@
 import Cocoa
+import LLMRuleCore
 
 final class TextInjector {
+    private static let pasteSessionType = NSPasteboard.PasteboardType("com.asrinput.pasteSession")
     private let switcher = InputSourceSwitcher()
 
     func inject(_ text: String) {
@@ -17,6 +19,7 @@ final class TextInjector {
     private func injectOnMain(_ text: String) {
         let pb = NSPasteboard.general
         let savedItems = saveClipboard(pb)
+        let sessionID = UUID().uuidString
 
         let switched = switcher.switchToASCIIIfNeeded()
         let pasteDelay: TimeInterval = switched ? 0.06 : 0
@@ -25,6 +28,7 @@ final class TextInjector {
             guard let self else { return }
             pb.clearContents()
             pb.setString(text, forType: .string)
+            pb.setString(sessionID, forType: Self.pasteSessionType)
 
             self.simulatePaste()
 
@@ -34,7 +38,16 @@ final class TextInjector {
                     self.switcher.restoreIfNeeded()
                 }
 
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + Preferences.shared.clipboardRestoreDelay) { [weak self] in
+                    guard ClipboardPasteSession.shouldRestoreClipboard(
+                        currentText: pb.string(forType: .string),
+                        currentSessionID: pb.string(forType: Self.pasteSessionType),
+                        expectedText: text,
+                        expectedSessionID: sessionID
+                    ) else {
+                        AppLogger.inject.info("Skipped clipboard restore because pasteboard changed")
+                        return
+                    }
                     self?.restoreClipboard(pb, items: savedItems)
                 }
             }

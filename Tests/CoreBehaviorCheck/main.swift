@@ -83,6 +83,8 @@ let entries = LLMCorrectionGlossary.parse(glossary)
 require(entries.count == 3, "parses glossary entries")
 require(entries[0].canonical == "Python", "keeps glossary canonical term")
 require(entries[0].aliases == ["配森", "派森"], "parses glossary aliases")
+require(entries[2].canonical == "ASRInput", "parses arrow canonical term")
+require(entries[2].aliases == ["ASR input", "asr input"], "parses arrow aliases")
 
 let glossaryPrompt = LLMRulePrompt.buildSystemPrompt(
     rules: LLMRuleSettings(
@@ -97,6 +99,29 @@ let glossaryPrompt = LLMRulePrompt.buildSystemPrompt(
 )
 require(glossaryPrompt.contains("术语优先"), "prompt includes selected correction mode")
 require(glossaryPrompt.contains("Python：配森、派森"), "prompt includes glossary section")
+
+require(
+    WordReplacementService.apply(to: "我用配森处理杰森数据。", glossary: glossary) == "我用Python处理JSON数据。",
+    "applies glossary word replacements before injection"
+)
+
+require(
+    WordReplacementService.apply(to: "ASR input 已启动。", glossary: glossary) == "ASRInput 已启动。",
+    "applies arrow-format aliases"
+)
+
+require(
+    WordReplacementService.apply(to: "没有匹配项", glossary: "") == "没有匹配项",
+    "keeps text unchanged when glossary is empty"
+)
+
+let overlappingGlossary = """
+Kubernetes = 酷伯内提斯, 酷伯
+"""
+require(
+    WordReplacementService.apply(to: "酷伯内提斯 集群", glossary: overlappingGlossary) == "Kubernetes 集群",
+    "prefers longer aliases before shorter overlapping aliases"
+)
 
 let acceptedDecision = LLMCorrectionGuard.evaluate(
     original: "我用配森处理杰森数据。",
@@ -141,5 +166,95 @@ require(
         > OverlayHUDLayout.panelWidth(textWidth: minHUDTextWidth, metrics: hudMetrics),
     "panel width grows with text width"
 )
+
+require(
+    TranscriptionPostProcessing.injectionText(rawText: " \n\t ", refinedText: nil) == nil,
+    "does not inject empty transcription text"
+)
+
+require(
+    TranscriptionPostProcessing.injectionText(rawText: " 原始识别文本 ", refinedText: nil) == "原始识别文本",
+    "falls back to trimmed raw transcription when refinement is unavailable"
+)
+
+require(
+    TranscriptionPostProcessing.injectionText(rawText: " 原始识别文本 ", refinedText: " 优化后文本 ") == "优化后文本",
+    "uses trimmed refined text as final injection text"
+)
+
+require(
+    TranscriptionPostProcessing.injectionText(rawText: " 原始识别文本 ", refinedText: " \n ") == "原始识别文本",
+    "falls back to raw transcription when refinement is blank"
+)
+
+require(
+    ClipboardPasteSession.shouldRestoreClipboard(
+        currentText: "要粘贴的文本",
+        currentSessionID: "session-a",
+        expectedText: "要粘贴的文本",
+        expectedSessionID: "session-a"
+    ),
+    "restores clipboard when pasteboard still belongs to the current paste session"
+)
+
+require(
+    !ClipboardPasteSession.shouldRestoreClipboard(
+        currentText: "用户刚复制的新内容",
+        currentSessionID: "session-a",
+        expectedText: "要粘贴的文本",
+        expectedSessionID: "session-a"
+    ),
+    "skips clipboard restore when user changes clipboard text after injection"
+)
+
+require(
+    !ClipboardPasteSession.shouldRestoreClipboard(
+        currentText: "要粘贴的文本",
+        currentSessionID: "session-b",
+        expectedText: "要粘贴的文本",
+        expectedSessionID: "session-a"
+    ),
+    "skips clipboard restore when paste session marker changed"
+)
+
+let lastStore = LastTranscriptionStore()
+require(lastStore.latest == nil, "starts with no last transcription")
+require(
+    !lastStore.save(
+        LastTranscription(
+            rawText: "",
+            processedText: "",
+            finalText: " \n ",
+            language: "zh-CN",
+            backend: "apple"
+        )
+    ),
+    "does not save blank final transcription text"
+)
+require(lastStore.latest == nil, "blank save does not create last transcription")
+
+let firstTranscription = LastTranscription(
+    rawText: "配森",
+    processedText: "Python",
+    finalText: "Python",
+    language: "zh-CN",
+    backend: "apple",
+    timestamp: Date(timeIntervalSince1970: 1)
+)
+require(lastStore.save(firstTranscription), "saves nonblank last transcription")
+require(lastStore.latest == firstTranscription, "returns saved last transcription")
+
+let secondTranscription = LastTranscription(
+    rawText: "杰森",
+    processedText: "JSON",
+    finalText: "JSON",
+    language: "zh-CN",
+    backend: "whisper",
+    timestamp: Date(timeIntervalSince1970: 2)
+)
+require(lastStore.save(secondTranscription), "overwrites last transcription")
+require(lastStore.latest == secondTranscription, "returns newest last transcription")
+lastStore.clear()
+require(lastStore.latest == nil, "clears last transcription")
 
 print("CoreBehaviorCheck passed")

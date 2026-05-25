@@ -1,8 +1,11 @@
 import Cocoa
+import LLMRuleCore
 
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
+    private weak var copyLastItem: NSMenuItem?
+    private weak var pasteLastItem: NSMenuItem?
 
     // AppDelegate is passed in and used as direct target for menu actions
     private weak var delegate: AppDelegate?
@@ -86,6 +89,28 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
+        let copyLast = NSMenuItem(
+            title: "复制上一条",
+            action: #selector(AppDelegate.menuCopyLastTranscription),
+            keyEquivalent: ""
+        )
+        copyLast.target = delegate
+        copyLast.isEnabled = LastTranscriptionStore.shared.latest != nil
+        menu.addItem(copyLast)
+        self.copyLastItem = copyLast
+
+        let pasteLast = NSMenuItem(
+            title: "重新粘贴上一条",
+            action: #selector(AppDelegate.menuPasteLastTranscription),
+            keyEquivalent: ""
+        )
+        pasteLast.target = delegate
+        pasteLast.isEnabled = LastTranscriptionStore.shared.latest != nil
+        menu.addItem(pasteLast)
+        self.pasteLastItem = pasteLast
+
+        menu.addItem(.separator())
+
         let settings = NSMenuItem(
             title: "设置…",
             action: #selector(AppDelegate.menuOpenSettings),
@@ -113,5 +138,11 @@ final class MenuBarController: NSObject {
         for item in langMenu.items {
             item.state = item.representedObject as? String == current ? .on : .off
         }
+    }
+
+    func updateLastTranscriptionItems() {
+        let hasLast = LastTranscriptionStore.shared.latest != nil
+        copyLastItem?.isEnabled = hasLast
+        pasteLastItem?.isEnabled = hasLast
     }
 }
