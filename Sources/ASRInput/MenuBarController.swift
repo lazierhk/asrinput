@@ -6,6 +6,7 @@ final class MenuBarController: NSObject {
     private var menu: NSMenu!
     private weak var copyLastItem: NSMenuItem?
     private weak var pasteLastItem: NSMenuItem?
+    private weak var historyItem: NSMenuItem?
 
     // AppDelegate is passed in and used as direct target for menu actions
     private weak var delegate: AppDelegate?
@@ -109,6 +110,12 @@ final class MenuBarController: NSObject {
         menu.addItem(pasteLast)
         self.pasteLastItem = pasteLast
 
+        let history = NSMenuItem(title: "最近转写", action: nil, keyEquivalent: "")
+        history.submenu = makeHistoryMenu()
+        history.isEnabled = !LastTranscriptionStore.shared.history.isEmpty
+        menu.addItem(history)
+        self.historyItem = history
+
         menu.addItem(.separator())
 
         let settings = NSMenuItem(
@@ -144,5 +151,44 @@ final class MenuBarController: NSObject {
         let hasLast = LastTranscriptionStore.shared.latest != nil
         copyLastItem?.isEnabled = hasLast
         pasteLastItem?.isEnabled = hasLast
+        historyItem?.isEnabled = hasLast
+        historyItem?.submenu = makeHistoryMenu()
+    }
+
+    private func makeHistoryMenu() -> NSMenu {
+        let menu = NSMenu()
+        let history = LastTranscriptionStore.shared.history
+        guard !history.isEmpty else {
+            let empty = NSMenuItem(title: "暂无记录", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return menu
+        }
+
+        for (index, item) in history.prefix(10).enumerated() {
+            let preview = item.finalText.replacingOccurrences(of: "\n", with: " ")
+            let title = "\(index + 1). \(String(preview.prefix(24)))"
+            let copy = NSMenuItem(
+                title: "复制 \(title)",
+                action: #selector(AppDelegate.menuCopyHistoryItem(_:)),
+                keyEquivalent: ""
+            )
+            copy.target = delegate
+            copy.representedObject = item.finalText
+            menu.addItem(copy)
+
+            let paste = NSMenuItem(
+                title: "重贴 \(title)",
+                action: #selector(AppDelegate.menuPasteHistoryItem(_:)),
+                keyEquivalent: ""
+            )
+            paste.target = delegate
+            paste.representedObject = item.finalText
+            menu.addItem(paste)
+            if index < min(history.count, 10) - 1 {
+                menu.addItem(.separator())
+            }
+        }
+        return menu
     }
 }

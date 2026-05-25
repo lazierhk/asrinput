@@ -38,6 +38,7 @@ require(!selectivePrompt.contains("删除明显无意义的口头填充词"), "o
 require(selectivePrompt.contains("公司名 Acme 不要改成艾克米"), "includes trimmed custom rules")
 require(defaultPrompt.contains("不要输出思考过程"), "prompt forbids chain-of-thought output")
 require(defaultPrompt.contains("严格保守"), "prompt includes default correction mode")
+require(defaultPrompt.contains("Prompt 模式"), "prompt includes prompt mode")
 require(defaultPrompt.contains("URL、邮箱、数字"), "prompt protects structured tokens")
 
 let leakedThinkingOutput = """
@@ -99,6 +100,17 @@ let glossaryPrompt = LLMRulePrompt.buildSystemPrompt(
 )
 require(glossaryPrompt.contains("术语优先"), "prompt includes selected correction mode")
 require(glossaryPrompt.contains("Python：配森、派森"), "prompt includes glossary section")
+
+let emailPrompt = LLMRulePrompt.buildSystemPrompt(
+    rules: LLMRuleSettings(
+        punctuationEnabled: true,
+        sentenceBreakEnabled: true,
+        fillerWordsEnabled: true,
+        customRules: "",
+        promptMode: .email
+    )
+)
+require(emailPrompt.contains("邮件语气"), "prompt includes selected prompt mode")
 
 require(
     WordReplacementService.apply(to: "我用配森处理杰森数据。", glossary: glossary) == "我用Python处理JSON数据。",
@@ -243,6 +255,7 @@ let firstTranscription = LastTranscription(
 )
 require(lastStore.save(firstTranscription), "saves nonblank last transcription")
 require(lastStore.latest == firstTranscription, "returns saved last transcription")
+require(lastStore.history == [firstTranscription], "history includes saved transcription")
 
 let secondTranscription = LastTranscription(
     rawText: "杰森",
@@ -254,6 +267,7 @@ let secondTranscription = LastTranscription(
 )
 require(lastStore.save(secondTranscription), "overwrites last transcription")
 require(lastStore.latest == secondTranscription, "returns newest last transcription")
+require(lastStore.history == [secondTranscription, firstTranscription], "history keeps newest first")
 lastStore.clear()
 require(lastStore.latest == nil, "clears last transcription")
 

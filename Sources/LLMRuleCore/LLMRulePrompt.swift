@@ -6,6 +6,7 @@ public struct LLMRuleSettings {
     public var fillerWordsEnabled: Bool
     public var customRules: String
     public var mode: LLMCorrectionMode
+    public var promptMode: LLMPromptMode
     public var language: String
     public var glossary: String
 
@@ -15,6 +16,7 @@ public struct LLMRuleSettings {
         fillerWordsEnabled: Bool,
         customRules: String,
         mode: LLMCorrectionMode = .strict,
+        promptMode: LLMPromptMode = .plain,
         language: String = "zh-CN",
         glossary: String = ""
     ) {
@@ -23,6 +25,7 @@ public struct LLMRuleSettings {
         self.fillerWordsEnabled = fillerWordsEnabled
         self.customRules = customRules
         self.mode = mode
+        self.promptMode = promptMode
         self.language = language
         self.glossary = glossary
     }
@@ -43,6 +46,7 @@ public enum LLMRulePrompt {
         """
 
         prompt += "\n\n纠错强度：\n\(rules.mode.promptInstruction)"
+        prompt += "\n\nPrompt 模式：\(rules.promptMode.displayName)\n\(rules.promptMode.promptInstruction)"
         prompt += "\n\n识别语言：\(rules.language)"
 
         var styleRules: [String] = []

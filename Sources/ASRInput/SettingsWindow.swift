@@ -9,7 +9,7 @@ final class SettingsWindow: NSWindowController {
 
     convenience init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 760),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -104,6 +104,7 @@ final class SettingsWindow: NSWindowController {
     private var whisperEndpointField: NSTextField?
     private var whisperModelField: NSTextField?
     private var whisperAPIKeyField: NSSecureTextField?
+    private var audioInputPopup: NSPopUpButton?
     private var sttStatusLabel: NSTextField?
     private var whisperEndpointConstraint: NSLayoutConstraint?
     private weak var appleRadioRef: NSButton?
@@ -163,6 +164,22 @@ final class SettingsWindow: NSWindowController {
         apiKeyField.action = #selector(saveWhisperConfig)
         self.whisperAPIKeyField = apiKeyField
 
+        let inputLabel = makeLabel("输入设备:")
+        let inputPopup = NSPopUpButton()
+        inputPopup.translatesAutoresizingMaskIntoConstraints = false
+        inputPopup.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        inputPopup.addItem(withTitle: "跟随系统默认")
+        inputPopup.lastItem?.representedObject = ""
+        for device in AudioInputDeviceManager.inputDevices() {
+            inputPopup.addItem(withTitle: device.name)
+            inputPopup.lastItem?.representedObject = device.uid
+        }
+        let selectedUID = Preferences.shared.audioInputDeviceID
+        if let item = inputPopup.itemArray.first(where: { ($0.representedObject as? String) == selectedUID }) {
+            inputPopup.select(item)
+        }
+        self.audioInputPopup = inputPopup
+
         let testBtn = NSButton(title: "测试连接", target: self, action: #selector(testWhisperConnection))
         let saveBtn = NSButton(title: "保存", target: self, action: #selector(saveWhisperConfig))
 
@@ -176,6 +193,7 @@ final class SettingsWindow: NSWindowController {
         grid.addRow(with: [epLabel, epField])
         grid.addRow(with: [modelLabel, modelField])
         grid.addRow(with: [apiKeyLabel, apiKeyField])
+        grid.addRow(with: [inputLabel, inputPopup])
         grid.addRow(with: [NSGridCell.emptyContentView, btnStack])
         grid.column(at: 0).xPlacement = .trailing
 
@@ -224,6 +242,7 @@ final class SettingsWindow: NSWindowController {
             Preferences.shared.whisperModel = model
         }
         Preferences.shared.whisperAPIKey = whisperAPIKeyField?.stringValue ?? ""
+        Preferences.shared.audioInputDeviceID = audioInputPopup?.selectedItem?.representedObject as? String ?? ""
         sttStatusLabel?.stringValue = "已保存 ✓"
         sttStatusLabel?.textColor = .systemGreen
     }
@@ -265,6 +284,9 @@ final class SettingsWindow: NSWindowController {
     private var llmStatusLabel: NSTextField?
     private var llmEnabledCheck: NSButton?
     private var llmModePopup: NSPopUpButton?
+    private var llmPromptModePopup: NSPopUpButton?
+    private var appAwarePromptModeCheck: NSButton?
+    private var autoPauseMediaCheck: NSButton?
     private var llmPunctuationCheck: NSButton?
     private var llmSentenceBreakCheck: NSButton?
     private var llmFillerWordsCheck: NSButton?
@@ -321,6 +343,37 @@ final class SettingsWindow: NSWindowController {
         }
         modePopup.widthAnchor.constraint(equalToConstant: 280).isActive = true
         self.llmModePopup = modePopup
+
+        let promptModeLabel = makeLabel("Prompt 模式:")
+        let promptModePopup = NSPopUpButton()
+        promptModePopup.translatesAutoresizingMaskIntoConstraints = false
+        promptModePopup.addItems(withTitles: LLMPromptMode.allCases.map(\.displayName))
+        if let index = LLMPromptMode.allCases.firstIndex(of: Preferences.shared.llmPromptMode) {
+            promptModePopup.selectItem(at: index)
+        }
+        promptModePopup.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        self.llmPromptModePopup = promptModePopup
+
+        let appAwareCheck = NSButton(
+            checkboxWithTitle: "按前台 App 自动选择模式",
+            target: nil,
+            action: nil
+        )
+        appAwareCheck.state = Preferences.shared.appAwarePromptModeEnabled ? .on : .off
+        self.appAwarePromptModeCheck = appAwareCheck
+
+        let autoPauseCheck = NSButton(
+            checkboxWithTitle: "录音时暂停/恢复媒体播放",
+            target: nil,
+            action: nil
+        )
+        autoPauseCheck.state = Preferences.shared.autoPauseMedia ? .on : .off
+        self.autoPauseMediaCheck = autoPauseCheck
+
+        let behaviorStack = NSStackView(views: [appAwareCheck, autoPauseCheck])
+        behaviorStack.orientation = .vertical
+        behaviorStack.alignment = .leading
+        behaviorStack.spacing = 4
 
         let rulesLabel = makeLabel("整理规则:")
         let punctuationCheck = NSButton(
@@ -431,6 +484,8 @@ final class SettingsWindow: NSWindowController {
         grid.addRow(with: [keyLabel, keyField])
         grid.addRow(with: [modelLabel, modelField])
         grid.addRow(with: [modeLabel, modePopup])
+        grid.addRow(with: [promptModeLabel, promptModePopup])
+        grid.addRow(with: [makeLabel("自动行为:"), behaviorStack])
         grid.addRow(with: [rulesLabel, rulesStack])
         grid.addRow(with: [glossaryLabel, glossaryScroll])
         grid.addRow(with: [customRulesLabel, customRulesScroll])
@@ -461,6 +516,12 @@ final class SettingsWindow: NSWindowController {
            LLMCorrectionMode.allCases.indices.contains(index) {
             Preferences.shared.llmCorrectionMode = LLMCorrectionMode.allCases[index]
         }
+        if let index = llmPromptModePopup?.indexOfSelectedItem,
+           LLMPromptMode.allCases.indices.contains(index) {
+            Preferences.shared.llmPromptMode = LLMPromptMode.allCases[index]
+        }
+        Preferences.shared.appAwarePromptModeEnabled = appAwarePromptModeCheck?.state == .on
+        Preferences.shared.autoPauseMedia = autoPauseMediaCheck?.state == .on
         Preferences.shared.llmPunctuationEnabled = llmPunctuationCheck?.state == .on
         Preferences.shared.llmSentenceBreakEnabled = llmSentenceBreakCheck?.state == .on
         Preferences.shared.llmFillerWordsEnabled = llmFillerWordsCheck?.state == .on
@@ -523,6 +584,7 @@ final class SettingsWindow: NSWindowController {
         addDiagnosticsRow(to: grid, key: "accessibility", title: "辅助功能权限")
         addDiagnosticsRow(to: grid, key: "speech", title: "Apple Speech")
         addDiagnosticsRow(to: grid, key: "backend", title: "当前识别后端")
+        addDiagnosticsRow(to: grid, key: "input", title: "实际输入设备")
         addDiagnosticsRow(to: grid, key: "whisper", title: "Whisper HTTP")
         addDiagnosticsRow(to: grid, key: "llm", title: "LLM 连接")
         addDiagnosticsRow(to: grid, key: "last", title: "上一条转写")
@@ -562,6 +624,7 @@ final class SettingsWindow: NSWindowController {
         updateDiagnosticsRow("accessibility", PermissionManager.checkAccessibility(prompt: false) ? "已授权" : "未授权")
         updateDiagnosticsRow("speech", speechStatus())
         updateDiagnosticsRow("backend", Preferences.shared.sttBackend.rawValue)
+        updateDiagnosticsRow("input", AudioInputDeviceManager.currentInputDeviceName())
         updateDiagnosticsRow("last", LastTranscriptionStore.shared.latest == nil ? "无" : "有")
         checkWhisperDiagnostics()
         checkLLMDiagnostics()

@@ -73,6 +73,11 @@ final class Preferences {
         set { defaults.set(newValue, forKey: "whisperAPIKey") }
     }
 
+    var audioInputDeviceID: String {
+        get { defaults.string(forKey: "audioInputDeviceID") ?? "" }
+        set { defaults.set(newValue, forKey: "audioInputDeviceID") }
+    }
+
     // MARK: - LLM
     var llmEnabled: Bool {
         get { defaults.bool(forKey: "llmEnabled") }
@@ -102,6 +107,26 @@ final class Preferences {
             return mode
         }
         set { defaults.set(newValue.rawValue, forKey: "llmCorrectionMode") }
+    }
+
+    var llmPromptMode: LLMPromptMode {
+        get {
+            guard let raw = defaults.string(forKey: "llmPromptMode"),
+                  let mode = LLMPromptMode(rawValue: raw)
+            else { return .plain }
+            return mode
+        }
+        set { defaults.set(newValue.rawValue, forKey: "llmPromptMode") }
+    }
+
+    var appAwarePromptModeEnabled: Bool {
+        get { bool(forKey: "appAwarePromptModeEnabled", default: false) }
+        set { defaults.set(newValue, forKey: "appAwarePromptModeEnabled") }
+    }
+
+    var autoPauseMedia: Bool {
+        get { bool(forKey: "autoPauseMedia", default: false) }
+        set { defaults.set(newValue, forKey: "autoPauseMedia") }
     }
 
     var llmPunctuationEnabled: Bool {

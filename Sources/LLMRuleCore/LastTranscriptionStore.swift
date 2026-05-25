@@ -28,12 +28,19 @@ public struct LastTranscription: Equatable {
 public final class LastTranscriptionStore {
     public static let shared = LastTranscriptionStore()
 
-    private var value: LastTranscription?
+    private var values: [LastTranscription] = []
+    private let limit: Int
 
-    public init() {}
+    public init(limit: Int = 20) {
+        self.limit = max(1, limit)
+    }
 
     public var latest: LastTranscription? {
-        value
+        values.first
+    }
+
+    public var history: [LastTranscription] {
+        values
     }
 
     @discardableResult
@@ -41,11 +48,14 @@ public final class LastTranscriptionStore {
         guard !transcription.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
-        value = transcription
+        values.insert(transcription, at: 0)
+        if values.count > limit {
+            values.removeLast(values.count - limit)
+        }
         return true
     }
 
     public func clear() {
-        value = nil
+        values.removeAll()
     }
 }

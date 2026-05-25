@@ -19,6 +19,7 @@ final class LLMRefiner {
                 fillerWordsEnabled: Preferences.shared.llmFillerWordsEnabled,
                 customRules: Preferences.shared.llmCustomRules,
                 mode: Preferences.shared.llmCorrectionMode,
+                promptMode: AppPromptModeResolver.currentMode(),
                 language: Preferences.shared.language,
                 glossary: Preferences.shared.llmGlossary
             )

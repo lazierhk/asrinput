@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
     private var transcriber: any Transcriber
     private var settingsWindow: SettingsWindow?
     private var hotkeyRetryTimer: Timer?
+    private var mediaPausedForRecording = false
+    private var restoredInputDevice: AudioInputDevice?
 
     override init() {
         transcriber = Self.makeTranscriber()
@@ -84,6 +86,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
         injector.inject(text)
     }
 
+    @objc func menuCopyHistoryItem(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    @objc func menuPasteHistoryItem(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        injector.inject(text)
+    }
+
     // MARK: - Settings
 
     func openSettings() {
@@ -99,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
     func hotkeyDidStart() {
         AppLogger.main.info("Recording started")
         menuBar.setRecordingState(true)
+        pauseMediaIfNeeded()
+        applySelectedInputDeviceIfNeeded()
 
         let lang = Preferences.shared.language
         transcriber.start(language: lang) { [weak self] error in
@@ -106,6 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
                 AppLogger.speech.error("Transcriber start failed: \(error.localizedDescription)")
                 self?.hotkey.resetRecordingState()
                 self?.menuBar.setRecordingState(false)
+                self?.resumeMediaIfNeeded()
+                self?.restoreInputDeviceIfNeeded()
                 return
             }
             self?.overlay.show()
@@ -124,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
 
     private func stopAndInject() {
         menuBar.setRecordingState(false)
+        resumeMediaIfNeeded()
+        restoreInputDeviceIfNeeded()
 
         transcriber.stop { [weak self] rawText in
             guard let self else { return }
@@ -170,7 +190,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotkeyManagerDelegate 
         hotkey.resetRecordingState()
         let text = note.userInfo?["text"] as? String ?? ""
         menuBar.setRecordingState(false)
+        resumeMediaIfNeeded()
+        restoreInputDeviceIfNeeded()
         transcriptionPipeline.process(rawText: text, overlay: overlay)
+    }
+
+    private func pauseMediaIfNeeded() {
+        guard Preferences.shared.autoPauseMedia, !mediaPausedForRecording else { return }
+        MediaPlaybackController.togglePlayPause()
+        mediaPausedForRecording = true
+    }
+
+    private func resumeMediaIfNeeded() {
+        guard mediaPausedForRecording else { return }
+        MediaPlaybackController.togglePlayPause()
+        mediaPausedForRecording = false
+    }
+
+    private func applySelectedInputDeviceIfNeeded() {
+        guard let selected = AudioInputDeviceManager.selectedInputDevice(),
+              let current = AudioInputDeviceManager.defaultInputDevice(),
+              selected.id != current.id
+        else { return }
+
+        restoredInputDevice = current
+        if AudioInputDeviceManager.setDefaultInputDevice(selected.id) {
+            AppLogger.main.info("Using selected input device: \(selected.name, privacy: .public)")
+        } else {
+            restoredInputDevice = nil
+            AppLogger.main.error("Failed to switch input device to \(selected.name, privacy: .public)")
+        }
+    }
+
+    private func restoreInputDeviceIfNeeded() {
+        guard let restoredInputDevice else { return }
+        if AudioInputDeviceManager.setDefaultInputDevice(restoredInputDevice.id) {
+            AppLogger.main.info("Restored input device: \(restoredInputDevice.name, privacy: .public)")
+        }
+        self.restoredInputDevice = nil
     }
 
     @objc private func handleSTTBackendChanged() {
